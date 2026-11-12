@@ -1,0 +1,73 @@
+import { expect, test } from "@playwright/test";
+
+test("полный путь ученика и автора без внешних сервисов", async ({ page }) => {
+  const errors: string[] = [];
+  const external: string[] = [];
+  page.on("pageerror", e => errors.push(e.message));
+  page.on("request", r => { if (!r.url().startsWith("http://127.0.0.1:3000") && !r.url().startsWith("data:")) external.push(r.url()); });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: /Щитовидная/ }).first()).toBeVisible();
+  await page.locator('a[href="#/checkout/feedback"]').first().click();
+  await page.getByLabel("Показать ошибку оформления").check();
+  await page.getByRole("button", { name: "Открыть демо-доступ" }).click();
+  await expect(page.getByRole("alert")).toContainText("Деньги не списывались");
+  await page.getByLabel("Показать ошибку оформления").uncheck();
+  await page.getByRole("button", { name: "Открыть демо-доступ" }).click();
+  await expect(page.getByRole("heading", { name: "Продолжим практику." })).toBeVisible();
+  await page.getByRole("link", { name: "Продолжить обучение" }).click();
+  await page.getByRole("button", { name: "Запустить пример" }).click();
+  await expect(page.getByRole("button", { name: "Пауза", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Пауза", exact: true }).click();
+  await page.getByRole("button", { name: "Проверить ошибку" }).click();
+  await expect(page.getByRole("alert")).toContainText("Пример недоступен");
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
+  await page.getByRole("button", { name: "Отметить как пройденный" }).click();
+  await expect(page.getByRole("button", { name: /Урок пройден/ })).toBeVisible();
+  await page.getByLabel("Ваш вопрос").fill("Где можно посмотреть материалы к этому уроку?");
+  await page.getByRole("button", { name: "Сохранить демо-вопрос" }).click();
+  await expect(page.getByText("Ожидает ответа", { exact: false }).first()).toBeVisible();
+  await page.getByRole("link", { name: "Режим автора", exact: false }).click();
+  await page.getByLabel("Ответ автора").fill("Пособие находится под демонстрационным уроком.");
+  await page.getByRole("button", { name: "Сохранить ответ" }).click();
+  await page.goto("/#/lesson/anatomy");
+  await expect(page.getByText("Пособие находится под демонстрационным уроком.", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: /Урок пройден/ })).toBeVisible();
+  await page.getByRole("link", { name: /Пособие к курсу/ }).click();
+  await expect(page.getByText("Демо-лицензия D-001", { exact: false })).toBeVisible();
+  await page.emulateMedia({ media: "print" });
+  await expect(page.locator(".site-header")).not.toBeVisible();
+  await expect(page.locator(".print-sheet")).toBeVisible();
+  const pdf = await page.pdf({ format: "A4" });
+  expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+  await page.emulateMedia({ media: "screen" });
+  await page.getByRole("button", { name: "Сбросить демо" }).click();
+  await page.getByRole("button", { name: "Да, сбросить" }).click();
+  await page.goto("/#/lesson/anatomy");
+  await expect(page.getByRole("heading", { name: "Нужен демо-доступ" })).toBeVisible();
+  expect(errors).toEqual([]);
+  expect(external).toEqual([]);
+});
+
+test("самостоятельный тариф, истечение, маршруты и мобильная ширина", async ({ page }) => {
+  await page.goto("/#/checkout/self");
+  await page.getByRole("button", { name: "Открыть демо-доступ" }).click();
+  await page.getByRole("link", { name: "Продолжить обучение" }).click();
+  await expect(page.getByLabel("Ваш вопрос")).toHaveCount(0);
+  await expect(page.getByText("Обратная связь включена в тариф", { exact: false })).toBeVisible();
+  await page.goto("/#/learning");
+  await page.getByText("Сценарии демонстрации").click();
+  await page.getByRole("button", { name: "Показать истечение доступа" }).click();
+  await expect(page.getByRole("heading", { name: "Демо-доступ истёк" })).toBeVisible();
+  await page.goto("/#/lesson/unknown");
+  await expect(page.getByRole("heading", { name: "Урок не найден" })).toBeVisible();
+  await page.goto("/#/missing");
+  await expect(page.getByRole("heading", { name: "Страница не найдена" })).toBeVisible();
+  for (const hash of ["course", "checkout/feedback", "author", "handout"]) {
+    await page.goto(`/#/${hash}`);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  await page.goto("/");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Перейти к содержимому" })).toBeFocused();
+});
